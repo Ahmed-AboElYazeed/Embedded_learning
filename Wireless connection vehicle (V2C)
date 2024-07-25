@@ -1,0 +1,426 @@
+#include <HardwareSerial.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include <float.h> // Include float.h to use FLT_MAX
+
+// Constants
+#define BUTTON_PIN 5
+#define MIN_SOC 20                                  //:::::::::::::change min soc:::::::::::::
+#define MAX_LOCATIONS 10
+#define BING_API_KEY "Aj2J60CC2Kjv23eumIrBz52BDf-zIBJq2BCWUY3-sTKSca02Zn6n0WNTjaX7ViTn" // Replace with your actual Bing API key
+
+#define WIFI_SSID "OPPO Reno3"                                  //:::::::::::::change the wifi:::::::::::::
+#define WIFI_PASSWORD "12345678"                                        //:::::::::::::change the wifi:::::::::::::
+
+    //(tring gps for (MAX_GPS_RETRIES * MAX_A9G_RETRIES) before resetting the board) 20*5 times.
+#define MAX_GPS_RETRIES 6      //when exceeded, send the dummy address.                //:::::::::::::change the limit:::::::::::::
+#define MAX_A9G_RETRIES 5       //when exceeded, reset the A9G.                         //:::::::::::::change the limit:::::::::::::
+
+/*
+ * 
+ * mode selection:
+ * 
+ * mode1: " WEBMODE " 
+ * activate the website only. FOR faster data logging.
+ * mode2: " SYSMODE " 
+ * activate the complete system. BY commenting this line [#define WEBMODE]
+ * 
+ * 
+ */
+ //mode selection action:           if commented-> //get measurment data and send to api then send to website only
+//      #define WEBMODE             //if activated-> //get all data and send to website only
+
+// Global Variables
+float SOC = 100; // State of Charge or any other relevant metric
+int SPEED = 0;
+float CURRENT = 0;
+float VOLTAGE = 0;
+float latitude = 40.008;                     //:::::::::::::change the initial GPS location:::::::::::::
+float longitude = -74.008;                   //:::::::::::::change the initial GPS location:::::::::::::
+
+//Website data.
+const char* serverName = "https://497f-193-227-34-35.ngrok-free.app/data";                 //:::::::::::::change the ngrok server url:::::::::::::
+
+
+// Structures
+struct Location {
+  String name;
+  float latitude;
+  float longitude;
+  float distance;
+  int duration;
+};
+
+// Special locations
+Location locations[MAX_LOCATIONS]; // Array to hold up to "MAX_LOCATIONS" (10) locations
+int numLocations = 0; // Number of locations added
+Location nearestLocation = {"DUMMY NEAREST LOCATION", 0.0, 0.0, FLT_MAX, 0}; // Initial value for nearest location  //FLT_MAX is the max float number 
+
+// Hardware Serial for A9G
+HardwareSerial A9G(2);
+HardwareSerial STM32(1); // Assuming UART1 for communication with STM32 Blue Pill   //PIN 1 Tx, 3 Rx.
+      // Serial monitor is on the same serial as the stm: >>>>>>> Serial.printf=STM32.printf <<<<<<<
+
+// Function Prototypes
+void setup();
+void loop();
+void getGPSAndSendRequest();
+bool getGPS(int &retries, int &a9gRetries); //removed latitude, longitude
+void sendHTTPRequest2Server();
+bool sendHTTPRequest(float originLat, float originLon, Location *locations, int numLocations);
+void parseAndFindNearestLocation(String response, Location *locations, int numLocations);
+void connectToWiFi();
+void addLocation(String name, float latitude, float longitude);
+void resetA9G();  //commenting reset function
+void sendToSTM32(String name, float distance, int duration);
+void receiveFromSTM32();
+
+/*CODE*/
+
+void setup() {
+  Serial.begin(115200);
+  A9G.begin(115200, SERIAL_8N1, 16, 17); // RX and TX pins for A9G
+  STM32.begin(115200); // UART for STM32 Blue Pill
+
+  pinMode(BUTTON_PIN, INPUT_PULLUP); // System activated when the pin is connected to LOW
+
+  Serial.println("System Initialized"); //to stm
+
+  connectToWiFi();
+
+
+  // Adding initial locations
+  
+  //elmataria testing
+  addLocation("Helwan University", 29.851133574075643, 31.342158396219638); // 131KM DUMMY  //40.5KM  REAL
+  addLocation("Azama", 29.97272096359816, 31.252989033786637);             // 150KM DUMMY  //24.2KM  REAL
+  addLocation("DUMMY zay el fool", 29.001225, 31.0047057);                  // 0.5KM DUMMY  //174KM   REAL
+  //ACTUAL GPS 30.123468, 31.325078 warshet elsayarat fy helwan elmataria.
+  //DUMMY 29.000000, 31.000000
+  /*
+  //home testing.
+  addLocation("Helwan University", 29.851133574075643, 31.342158396219638); // 131KM DUMMY  //21.2KM  REAL
+  addLocation("Helwan ElMatariya", 30.12252380856833, 31.32569019480295);   // 176KM DUMMY  //27.7KM  REAL
+  addLocation("DUMMY zay el fool", 29.001225, 31.0047057);                  // 0.5KM DUMMY  //160KM   REAL
+  //ACTUAL GPS 29.972734, 31.252960 gedo home.
+  //DUMMY 29.000000, 31.000000
+  */
+  /*  
+  //Comptition locations.
+  addLocation("station1", 0, 0); // 131KM DUMMY  //21.2KM  REAL
+  addLocation("station1", 0, 0); // 131KM DUMMY  //21.2KM  REAL
+  addLocation("station1", 0, 0); // 131KM DUMMY  //21.2KM  REAL
+  addLocation("station1", 0, 0); // 131KM DUMMY  //21.2KM  REAL
+  //ACTUAL GPS 0, 0 track location.
+  //DUMMY 0, 0
+  */
+
+  Serial.println("10 sec delay for letting the A9G start");
+  delay(5000); // Wait for 5 seconds before next reading
+  Serial.println("Delay is finished");
+}
+
+void loop() {
+
+/*
+  // Uncomment this next line to receive the real SOC in real testing<<<<<<<<<<<<<<<<<<<<<<<<<
+   receiveFromSTM32(); // Updates all the measurement data from STM32
+
+  //send http post request to ngrok  
+  sendHTTPRequest2Server();
+  //delay(30000); // Wait for 30 seconds before next reading
+
+  //SOC = 0; // Remove this line when really testing. Used TO FORCE THE SYSTEM into infinite loop.<<<<<<<<<<<<<
+
+  if (digitalRead(BUTTON_PIN) == LOW || SOC < MIN_SOC) {
+    getGPSAndSendRequest();
+    //delay(30000); // Wait for 30 seconds before next reading
+  }
+*/
+
+// Uncomment this next line to receive the real SOC in real testing<<<<<<<<<<<<<<<<<<<<<<<<<
+   receiveFromSTM32(); // Updates all the measurement data from STM32
+
+  //
+#ifdef WEBMODE
+  int retries = 0;
+  int a9gRetries = 0;
+  if (getGPS(retries, a9gRetries)) {
+    Serial.printf("Got GPS: %f, %f\n", latitude, longitude);
+  } else {
+    latitude = 29.123456789; // Dummy value                      //:::::::::::::change the dummy:::::::::::::
+    longitude = 31.123456789; // Dummy value                     //:::::::::::::change the dummy:::::::::::::
+//0    Serial.println("Using Dummy GPS values");
+  }
+  //
+  
+  //send http post request to ngrok  
+  sendHTTPRequest2Server();
+  //delay(30000); // Wait for 30 seconds before next reading
+
+  sendToSTM32(nearestLocation.name, nearestLocation.distance, nearestLocation.duration);
+
+#else
+  //SOC = 0; // Remove this line when really testing. Used TO FORCE THE SYSTEM into infinite loop.<<<<<<<<<<<<<
+
+  //if (digitalRead(BUTTON_PIN) == LOW || SOC < MIN_SOC) {
+    getGPSAndSendRequest();
+    //delay(30000); // Wait for 30 seconds before next reading
+  //}
+
+   //send http post request to ngrok  
+   sendHTTPRequest2Server();
+   //delay(30000); // Wait for 30 seconds before next reading
+#endif
+
+
+}
+
+/*<<<<<<<<<<MAIN_SYS>>>>>>>>>>*/
+
+void getGPSAndSendRequest() {
+  int retries = 0;
+  int a9gRetries = 0;
+
+  if (getGPS(retries, a9gRetries)) {
+//0    Serial.printf("Got GPS: %f, %f\n", latitude, longitude);
+  } else {
+    latitude = 29.000000; // Dummy value                      //:::::::::::::change the dummy:::::::::::::
+    longitude = 31.000000; // Dummy value                     //:::::::::::::change the dummy:::::::::::::
+//0    Serial.println("Using Dummy GPS values");
+  }
+
+//0  Serial.printf("Number of retries to get GPS: %d\n", retries);
+
+  if (sendHTTPRequest(latitude, longitude, locations, numLocations)) {
+    sendToSTM32(nearestLocation.name, nearestLocation.distance, nearestLocation.duration);
+  }
+}
+
+/*<<<<<<<<<<A9G_GPS>>>>>>>>>>*/
+
+bool getGPS(int &retries, int &a9gRetries) {
+  A9G.println("AT+GPS=1"); // Turn on GPS
+  delay(2000);
+
+  retries = 0;
+  while (retries < MAX_GPS_RETRIES && a9gRetries < MAX_A9G_RETRIES) {
+    A9G.println("AT+LOCATION=2");
+    delay(2000);
+
+    while (A9G.available()) {
+      String gpsData = A9G.readStringUntil('\n');
+      if (gpsData.indexOf("+LOCATION: GPS NOT FIX NOW") != -1) {
+        retries++;
+        break;
+      } else if (gpsData.indexOf(",") != -1) {
+        int commaIndex = gpsData.indexOf(",");
+        latitude = gpsData.substring(0, commaIndex).toFloat();
+        longitude = gpsData.substring(commaIndex + 1).toFloat();
+        return true;
+      }
+    }
+  }
+
+  if (retries >= MAX_GPS_RETRIES) {
+//0    Serial.println("GPS retries exceeded, using dummy values.");
+    //a9gRetries++;   //commenting reset function
+    return false;
+  }
+/*  //commenting reset function
+  if (a9gRetries >= MAX_A9G_RETRIES) {
+    Serial.println("A9G retries exceeded, resetting A9G module.");
+    resetA9G();
+    a9gRetries = 0; // Reset the counter after reset
+  }
+*/
+  return false;
+}
+
+/*<<<<<<<<<<HTTP_Requests>>>>>>>>>>*/
+
+bool sendHTTPRequest(float originLat, float originLon, Location *locations, int numLocations) {
+  String url = "http://dev.virtualearth.net/REST/v1/Routes/DistanceMatrix?origins=";
+  url += String(originLat) + "," + String(originLon);
+  url += "&destinations=";
+
+  for (int i = 0; i < numLocations; i++) {
+    if (i > 0) url += ";";
+    url += String(locations[i].latitude) + "," + String(locations[i].longitude);
+  }
+
+  url += "&travelMode=driving&key=" + String(BING_API_KEY);
+
+  HTTPClient http;
+  http.begin(url);
+  int httpCode = http.GET();
+
+  if (httpCode > 0) {
+    String response = http.getString();
+    parseAndFindNearestLocation(response, locations, numLocations);
+    http.end();
+    return true;
+  } else {
+    Serial.println("Error on HTTP request");
+    http.end();
+    return false;
+  }
+}
+
+
+void sendHTTPRequest2Server() {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    http.begin(serverName);
+    http.addHeader("Content-Type", "application/json");
+    String jsonPayload = "{\"speed\": " + String(SPEED) + ", \"current\": " + String(CURRENT) + ", \"voltage\": " + String(VOLTAGE) + ", \"soc\": " + String(SOC) + ", \"lat\": " + String(latitude,6) + ", \"lng\": " + String(longitude,6) + "}";
+
+    // Send HTTP POST request
+    int httpResponseCode = http.POST(jsonPayload);
+
+    // Check the response code
+    if (httpResponseCode > 0) {
+      String response = http.getString();
+//0      Serial.println(httpResponseCode);
+//0      Serial.println(response);
+    } else {
+//0      Serial.print("Error on sending POST: ");
+//0      Serial.println(httpResponseCode);
+    }
+
+    // Free resources
+    http.end();
+  } else {
+    Serial.println("WiFi Disconnected");
+  }
+}
+
+/*<<<<<<<<<<Nearest_Location>>>>>>>>>>*/
+
+void parseAndFindNearestLocation(String response, Location *locations, int numLocations) {
+  StaticJsonDocument<2048> doc;
+  deserializeJson(doc, response);
+
+  float minDistance = FLT_MAX;
+  String nearestLocationName;
+  for (int i = 0; i < numLocations; i++) {
+    float distance = doc["resourceSets"][0]["resources"][0]["results"][i]["travelDistance"];
+    int duration = doc["resourceSets"][0]["resources"][0]["results"][i]["travelDuration"];
+
+    locations[i].distance = distance;
+    locations[i].duration = duration;
+
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearestLocationName = locations[i].name;
+      nearestLocation = locations[i]; // Update nearest location
+    }
+  }
+
+//0  Serial.println("Nearest Location: " + nearestLocationName);
+//0  Serial.print("Distance: ");
+//0  Serial.println(minDistance);
+}
+
+/*<<<<<<<<<<UART_Communication>>>>>>>>>>*/
+
+// Send nearest location data to STM32
+void sendToSTM32(String name, float distance, int duration) {
+  String data = name + "," + String(distance) + "," + String(duration);
+  //STM32.println(data);
+  Serial.println(data);
+  //Serial.println("Sent to STM32: " + data);
+}
+
+// Receive SOC from STM32
+void receiveFromSTM32() {
+  while (Serial.available()) {
+    String socData = Serial.readStringUntil('\n');
+    Serial.println("Received from STM32: " + socData);
+
+    // Parse the received data
+    int commaIndex1 = socData.indexOf(',');
+    int commaIndex2 = socData.indexOf(',', commaIndex1 + 1);
+    int commaIndex3 = socData.indexOf(',', commaIndex2 + 1);
+
+    SOC = socData.substring(0, commaIndex1).toFloat();
+    SPEED = socData.substring(commaIndex1 + 1, commaIndex2).toInt();
+    CURRENT = socData.substring(commaIndex2 + 1, commaIndex3).toFloat();
+    VOLTAGE = socData.substring(commaIndex3 + 1).toFloat();
+
+//0    Serial.printf("SOC: %.2f, Speed: %d, Current: %.2f, Voltage: %.2f\n", SOC, SPEED, CURRENT, VOLTAGE);
+  }
+}
+
+void connectToWiFi() {
+  Serial.print("Connecting to Wi-Fi");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.print(".");
+  }
+  Serial.println("Connected!");
+}
+
+void addLocation(String name, float latitude, float longitude) {
+  if (numLocations < MAX_LOCATIONS) {
+    locations[numLocations].name = name;
+    locations[numLocations].latitude = latitude;
+    locations[numLocations].longitude = longitude;
+    numLocations++;
+  } else {
+    Serial.println("Location array is full. Cannot add more locations.");
+  }
+}
+/*    //commenting reset function
+void resetA9G() {
+  A9G.println("AT+RST=1");
+  delay(2000);
+
+  unsigned long startTime = millis();
+  unsigned long timeout = 10000; // 10 seconds timeout
+
+  bool isResponsive = false;
+
+  while (millis() - startTime < timeout) {
+    if (A9G.available()) {
+      String response = A9G.readStringUntil('\n');
+      Serial.println(response); // Print the response for debugging
+      if (response.indexOf("READY") != -1) {
+        Serial.println("A9G Module Reset and Ready");
+        isResponsive = true;
+        break;
+      }
+    }
+    delay(100);
+  }
+
+  if (!isResponsive) {
+    Serial.println("A9G Module did not respond with READY. Sending test command to check responsiveness.");
+
+    // Send a test command to check if the module is responsive
+    A9G.println("AT");
+    delay(1000);
+
+    startTime = millis();
+    while (millis() - startTime < timeout) {
+      if (A9G.available()) {
+        String response = A9G.readStringUntil('\n');
+        Serial.println(response); // Print the response for debugging
+        if (response.indexOf("OK") != -1) {
+          Serial.println("A9G Module is responsive.");
+          isResponsive = true;
+          break;
+        }
+      }
+      delay(100);
+    }
+
+    if (!isResponsive) {
+      Serial.println("A9G Module is not responsive after reset.");
+    }
+  }
+}
+*/
