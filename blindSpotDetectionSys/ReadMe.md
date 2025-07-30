@@ -43,7 +43,7 @@ Blind spot detection is a key driver-assistance system that alerts the driver to
 - The system constantly checks for obstacles in the blind spot zone (distance < threshold).
 - If an object is detected on either side:
   - Corresponding **LED turns ON**.
-  - Optionally, a **buzzer** can sound for critical alerts.
+  - Optionally, a **buzzer** can sound for critical alerts (I didn't includle it).
 
 ---
 
