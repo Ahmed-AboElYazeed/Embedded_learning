@@ -63,7 +63,7 @@ Each version included debugging features, hardware reset control, and compatibil
 If you’re building a similar telemetry or vehicle alert system and want support:
 
 **👤 Ahmed AboElyazeed**  
-📧 [ahmed.abouelyazeed@gmail.com](mailto:aboelyazeed7777@gmail.com)  
+📧 [aboelyazeed7777@gmail.com](mailto:aboelyazeed7777@gmail.com)  
 🔗 [linkedin.com/in/ahmedaboelyazeed](https://www.linkedin.com/in/ahmed-aboelyazeed-43ba22231/)
 
 ---
