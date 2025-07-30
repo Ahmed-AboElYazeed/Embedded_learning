@@ -1,4 +1,4 @@
-# 👁️ Blind Spot Detection System (BSD) – Arduino + Proteus
+# 👁️ Blind Spot Detection System (BSD)
 
 This project demonstrates a **low-cost Blind Spot Detection (BSD) system** for vehicles using **Arduino-based sensors** and logic. The system was designed, tested, and validated both in hardware (real-world prototyping) and virtually using **Proteus simulation**.
 
