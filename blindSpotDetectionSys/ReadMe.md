@@ -67,7 +67,7 @@ Blind spot detection is a key driver-assistance system that alerts the driver to
 For questions, improvements, or using this in a real vehicle or competition:
 
 **👤 Ahmed AboElyazeed**  
-📧 [ahmed.abouelyazeed@gmail.com](mailto:aboelyazeed7777@gmail.com)  
+📧 [aboelyazeed7777@gmail.com](mailto:aboelyazeed7777@gmail.com)  
 🔗 [linkedin.com/in/ahmedaboelyazeed](https://www.linkedin.com/in/ahmed-aboelyazeed-43ba22231/)
 
 ---
