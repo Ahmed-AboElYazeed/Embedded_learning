@@ -1,5 +1,5 @@
 # 🔋 Charging Level Warning & Vehicle Connectivity System  
-**EVER (Electric Vehicle Rally in EGYPT) – Telemetry & Alert System**
+**EVER 2024 (Electric Vehicle Rally in EGYPT) – Telemetry & Alert System**
 
 This project documents the design and implementation of a **real-time charging level warning and vehicle telemetry system** used in Shell Eco-marathon 2025. It was designed to send data wirelessly to an online dashboard, warn the driver of critical charge levels, and offer dual connectivity via **Wi-Fi or GPRS**.
 
@@ -70,4 +70,4 @@ If you’re building a similar telemetry or vehicle alert system and want suppor
 
 ## 🙏 Acknowledgements
 
-Developed as part of the **Helwan Racing Team's** vehicle for the **Shell Eco-marathon 2025**, this system was designed with reliability, low latency, and safety in mind — enabling a fully connected, efficient prototype EV.
+Developed as part of the **Helwan Racing Team's** vehicle for the **EVER 2024 (Electric Vehicle Rally in EGYPT)**, this system was designed with reliability, low latency, and safety in mind — enabling a fully connected, efficient prototype EV.
